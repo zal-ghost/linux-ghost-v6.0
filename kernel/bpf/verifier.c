@@ -5053,7 +5053,11 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 	int i, err;
 
 	/* find function prototype */
-	if (func_id < 0 || func_id >= __BPF_FUNC_MAX_ID) {
+	BUILD_BUG_ON(__BPF_FUNC_MAX_ID > __BPF_FUNC_GHOST_BASE);
+
+	if (func_id < 0 || (func_id >= __BPF_FUNC_MAX_ID &&
+			    !(func_id >= __BPF_FUNC_GHOST_BASE &&
+			      func_id < __BPF_FUNC_GHOST_MAX_ID))) {
 		verbose(env, "invalid func %s#%d\n", func_id_name(func_id),
 			func_id);
 		return -EINVAL;
@@ -7980,6 +7984,9 @@ static int check_return_code(struct bpf_verifier_env *env)
 		break;
 	case BPF_PROG_TYPE_SK_LOOKUP:
 		range = tnum_range(SK_DROP, SK_PASS);
+		break;
+	case BPF_PROG_TYPE_GHOST_SCHED:
+		range = tnum_range(0, INT_MAX);
 		break;
 	case BPF_PROG_TYPE_EXT:
 		/* freplace program can return anything as its return value
