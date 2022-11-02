@@ -99,7 +99,8 @@ struct task_group;
 #define TASK_NEW			0x0800
 /* RT specific auxilliary flag to mark RT lock waiters */
 #define TASK_RTLOCK_WAIT		0x1000
-#define TASK_STATE_MAX			0x2000
+#define __TASK_DEFERRABLE_WAKEUP	0x2000
+#define TASK_STATE_MAX			0x4000
 
 /* Convenience macros for the sake of set_current_state: */
 #define TASK_KILLABLE			(TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
@@ -661,6 +662,82 @@ struct sched_dl_entity {
 #endif
 };
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+struct ghost_queue;
+struct ghost_status_word;
+struct ghost_enclave;
+
+struct sched_ghost_entity {
+	struct list_head run_list;
+	ktime_t last_runnable_at;
+
+	/* The following fields are protected by 'task_rq(p)->lock' */
+	struct ghost_queue *dst_q;
+	struct ghost_status_word *status_word;
+	struct ghost_enclave *enclave;
+	/* See ghost_destroy_enclave() */
+	struct ghost_enclave *__agent_decref_enclave;
+
+	/* For operations with an "implicit" enclave parameter. */
+	struct ghost_enclave *__target_enclave;
+
+	/*
+	 * See also ghost_prepare_task_switch() and ghost_deferred_msgs()
+	 * for flags that are used to defer messages.
+	 */
+	uint blocked_task		: 1;
+	uint yield_task			: 1;
+	uint new_task			: 1;
+	uint agent			: 1;
+	uint bpf_cannot_load_prog	: 1;
+
+	/*
+	 * Locking of 'twi' is awkward:
+	 * 1. wake_up_new_task: both select_task_rq() and task_woken_ghost()
+	 *    are called with 'pi->lock' held.
+	 * 2. ttwu_do_activate: both select_task_rq() and task_woken_ghost()
+	 *    are called with 'pi->lock' held when called via ttwu_queue()
+	 *    (i.e. not a remote wakeup).
+	 * 3. ttwu_do_activate: only 'rq->lock' is held when called via
+	 *    sched_ttwu_pending (i.e. indirectly via ttwu_queue_remote).
+	 *
+	 * (1) and (2) are easy because 'p->pi_lock' is held across both
+	 * select_task_rq() and task_woken_ghost().
+	 *
+	 * (3) is tricky because 'p->pi_lock' is held when select_task_rq()
+	 * is called on the waker's cpu while 'rq->lock' is held when
+	 * task_woken_ghost() is called on the remote cpu. We rely on the
+	 * following constraints:
+	 * a. Once a task is woken up there cannot be another wakeup until
+	 *    it gets oncpu and blocks (thus another wakeup cannot happen
+	 *    until task_woken_ghost() has been called).
+	 * b. flush_smp_call_function_queue()->llist_del_all() pairs with
+	 *    __ttwu_queue_wakelist()->llist_add() to guarantee visiblity
+	 *    of changes made to 'p->ghost.twi' on the waker's cpu when
+	 *    ttwu_do_activate() is called on the remote cpu.
+	 */
+	struct {
+		int last_ran_cpu;
+		int wake_up_cpu;
+		int waker_cpu;
+	} twi;	/* twi = task_wakeup_info */
+
+	struct list_head task_list;
+	struct rcu_head rcu;
+};
+
+struct __kernel_timerfd_ghost {
+	bool enabled;
+	int cpu;
+	uint64_t type;
+	uint64_t cookie;
+};
+
+extern void ghost_commit_greedy_txn(void);
+extern void ghost_timerfd_triggered(struct __kernel_timerfd_ghost *timer);
+
+#endif
+
 #ifdef CONFIG_UCLAMP_TASK
 /* Number of utilization clamp buckets (shorter alias) */
 #define UCLAMP_BUCKETS CONFIG_UCLAMP_BUCKETS_COUNT
@@ -786,6 +863,12 @@ struct task_struct {
 	unsigned int			core_occupation;
 #endif
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	int64_t gtid;			/* ghost tid */
+	uint inhibit_task_msgs;		/* don't produce msgs for this task */
+	struct list_head inhibited_task_list;
+	struct sched_ghost_entity ghost;
+#endif
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
@@ -904,6 +987,7 @@ struct task_struct {
 	 * ->sched_remote_wakeup gets used, so it can be in this word.
 	 */
 	unsigned			sched_remote_wakeup:1;
+	unsigned			sched_deferrable_wakeup:1;
 
 	/* Bit to tell LSMs we're in execve(): */
 	unsigned			in_execve:1;
@@ -1529,6 +1613,14 @@ struct task_struct {
 	 */
 };
 
+#define bpf_ghost_sched_kern bpf_ghost_sched
+#define bpf_ghost_msg_kern bpf_ghost_msg
+
+struct bpf_prog;
+union bpf_attr;
+extern int ghost_bpf_link_attach(const union bpf_attr *attr,
+				 struct bpf_prog *prog);
+
 static inline struct pid *task_pid(struct task_struct *task)
 {
 	return task->thread_pid;
@@ -1970,14 +2062,32 @@ extern char *__get_task_comm(char *to, size_t len, struct task_struct *tsk);
 })
 
 #ifdef CONFIG_SMP
+extern void do_resched_ipi_work(void);
 static __always_inline void scheduler_ipi(void)
 {
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	/*
+	 * ghost_commit_pending_txn() needs RCU for correct operation so
+	 * make sure RCU is watching in case we interrupted an idle CPU.
+	 *
+	 * Rather than the full irq_enter/irq_exit we do the bare minimum
+	 * required for RCU to avoid pessimizing the common case (all work
+	 * done in the irq return path). Also see the comment below about
+	 * irq_enter/irq_exit.
+	 */
+	if (is_idle_task(current))
+		rcu_irq_enter();
+	ghost_commit_greedy_txn();
+	if (is_idle_task(current))
+		rcu_irq_exit();
+#endif
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
 	 * TIF_NEED_RESCHED remotely (for the first time) will also send
 	 * this IPI.
 	 */
 	preempt_fold_need_resched();
+	do_resched_ipi_work();
 }
 extern unsigned long wait_task_inactive(struct task_struct *, unsigned int match_state);
 #else
@@ -2251,6 +2361,9 @@ static inline bool vcpu_is_preempted(int cpu)
 	return false;
 }
 #endif
+
+extern int get_user_cpu_mask(unsigned long __user *user_mask_ptr, unsigned len,
+			     struct cpumask *new_mask);
 
 extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
 extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
