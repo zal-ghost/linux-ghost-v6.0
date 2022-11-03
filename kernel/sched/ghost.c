@@ -168,7 +168,7 @@ static void ghost_bpf_pnt(struct ghost_enclave *e, struct rq *rq,
 	if (rq->ghost.latched_task) {
 		ctx->next_gtid = gtid(rq->ghost.latched_task);
 	} else if (task_has_ghost_policy(prev)
-		   && prev->state == TASK_RUNNING
+		   && prev->__state == TASK_RUNNING
 		   && prev != agent
 		   && !rq->ghost.must_resched) {
 		ctx->next_gtid = gtid(prev);
@@ -1405,7 +1405,7 @@ static struct task_struct *_pick_next_task_ghost(struct rq *rq)
 	 * - cond_resched() called __schedule(preempt) but there isn't
 	 *   any higher priority task to switch to.
 	 */
-	if (task_has_ghost_policy(prev) && prev->state == TASK_RUNNING) {
+	if (task_has_ghost_policy(prev) && prev->__state == TASK_RUNNING) {
 		/*
 		 * When an agent blocks via ghost_run() we end up here with
 		 * 'prev == agent' via schedule(). Without the check below
@@ -1887,7 +1887,7 @@ static void enclave_reap_tasks(struct work_struct *work)
 	 */
 next_item:
 	list_for_each_entry(t, &e->task_list, ghost.task_list) {
-		if (t->state == TASK_DEAD)
+		if (t->__state == TASK_DEAD)
 			continue;
 		if (t == prev) {
 			WARN(1, "Reaper saw %d again, aborting!", t->pid);
@@ -1905,7 +1905,7 @@ next_item:
 
 		WARN_ONCE(ret && ret != -ESRCH,
 			  "Failed to setsched pid %d, ret %d, state 0x%lx)!",
-			  t->pid, ret, t->state);
+			  t->pid, ret, t->__state);
 
 		goto next_item;
 	}
@@ -2510,7 +2510,7 @@ static void ghost_uninhibit_task_msgs(struct task_struct *p)
 		goto done;
 
 	rq = task_rq_lock(p, &rf);
-	if (p->state != TASK_DEAD) {
+	if (p->__state != TASK_DEAD) {
 		/*
 		 * 'inhibit_task_msgs' is used as a boolean but it actually
 		 * holds the abi of the enclave the task departed from.
@@ -3349,7 +3349,7 @@ static int ghost_associate_queue(struct ghost_ioc_assoc_queue __user *arg)
 	sw = p->ghost.status_word;
 	if (unlikely(!sw)) {
 		/* Task is dead or switched to another sched_class */
-		WARN_ON_ONCE(p->state != TASK_DEAD &&
+		WARN_ON_ONCE(p->__state != TASK_DEAD &&
 			     ghost_class(p->sched_class));
 		error = -ENOENT;
 		goto done;
@@ -3941,7 +3941,7 @@ static inline int __task_deliver_common(struct rq *rq, struct task_struct *p)
 	 * in task_barrier_inc() below.
 	 */
 	if (unlikely(!p->ghost.status_word)) {
-		WARN_ON_ONCE(p->state != TASK_DEAD);
+		WARN_ON_ONCE(p->__state != TASK_DEAD);
 		return -1;
 	}
 
@@ -4244,7 +4244,7 @@ static void release_from_ghost(struct rq *rq, struct task_struct *p)
 		 *    before agent had a chance to handle the DEPARTED msg.
 		 */
 		free_status_word_locked(e, p->ghost.status_word);
-	} else if (p->state != TASK_DEAD) {
+	} else if (p->__state != TASK_DEAD) {
 		/* agents cannot setsched out of ghost */
 		WARN_ON_ONCE(is_agent(rq, p));
 
@@ -4333,7 +4333,7 @@ static void release_from_ghost(struct rq *rq, struct task_struct *p)
 		if (rq->ghost.latched_task)
 			ghost_latched_task_preempted(rq);
 		/* We don't allow agents to setsched away from ghost */
-		WARN_ON_ONCE(p->state != TASK_DEAD);
+		WARN_ON_ONCE(p->__state != TASK_DEAD);
 		rq->ghost.agent = NULL;
 		/*
 		 * Clear run_flags after dealing with latched_task: the
@@ -4361,7 +4361,7 @@ static void release_from_ghost(struct rq *rq, struct task_struct *p)
 		/* See __ghost_destroy_enclave() */
 		if (p->ghost.__agent_decref_enclave) {
 			/* Agents should only exit, never setsched out. */
-			WARN_ON_ONCE(p->state != TASK_DEAD);
+			WARN_ON_ONCE(p->__state != TASK_DEAD);
 			VM_BUG_ON(p->ghost.__agent_decref_enclave != e);
 			__enclave_remove_cpu(e, rq->cpu);
 			/*
