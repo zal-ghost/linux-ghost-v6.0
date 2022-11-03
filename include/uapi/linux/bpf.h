@@ -952,6 +952,8 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_LSM,
 	BPF_PROG_TYPE_SK_LOOKUP,
 	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
+	BPF_PROG_TYPE_GHOST_SCHED = 1000,
+	BPF_PROG_TYPE_GHOST_MSG,
 };
 
 enum bpf_attach_type {
@@ -999,7 +1001,21 @@ enum bpf_attach_type {
 	BPF_PERF_EVENT,
 	BPF_TRACE_KPROBE_MULTI,
 	BPF_LSM_CGROUP,
-	__MAX_BPF_ATTACH_TYPE
+	__MAX_BPF_ATTACH_TYPE,
+};
+
+enum {
+	/*
+	 * There are arrays in the kernel that use MAX_BPF_ATTACH_TYPE, notably
+	 * in kernel/bpf/cgroup.c.  That code will essentially ignore ghost
+	 * programs.  Note that bpftool won't know about our types either.
+	 *
+	 * If we ever merge upstream, we can go back below
+	 * __MAX_BPF_ATTACH_TYPE.  We have our own numbers to avoid rebase hell.
+	 */
+	BPF_GHOST_SCHED_PNT = 2000,
+	BPF_GHOST_MSG_SEND,
+	__MAX_BPF_GHOST_ATTACH_TYPE
 };
 
 #define MAX_BPF_ATTACH_TYPE __MAX_BPF_ATTACH_TYPE
@@ -5553,6 +5569,45 @@ enum bpf_func_id {
 };
 #undef __BPF_ENUM_FN
 
+/*
+ * The formatting of these is particular so that bpf_doc.py can parse them, just
+ * like the normal BPF helper descriptions.  The first function needs to be
+ * called bpf_ghost.  If you change __BPF_FUNC_GHOST_BASE, change bpf_doc.py
+ * too.
+ *
+ * Start of Ghost BPF helper function descriptions:
+ *
+ * long bpf_ghost_wake_agent(u32 cpu)
+ *	Description
+ *		Wakes the ghost agent on **cpu**.
+ *
+ *	Return
+ *		0 on success, < 0 on error.
+ *
+ * long bpf_ghost_run_gtid(s64 gtid, u32 task_barrier, s32 run_flags)
+ *	Description
+ *		Runs (latches) task **gtid** on this cpu.
+ *
+ *	Return
+ *		0 on success, < 0 on error.
+ *
+ * long bpf_ghost_resched_cpu(u32 cpu, u64 cpu_seqnum)
+ *	Description
+ *		Reschedules **cpu** if its state is still **cpu_seqnum**, such
+ *		that it calls pick_next_task and will not pick prev again.
+ *		Typically, it will run BPF-PNT.
+ *
+ *	Return
+ *		0 on success, < 0 on error.
+ */
+enum {
+	__BPF_FUNC_GHOST_BASE = 3000,
+	BPF_FUNC_ghost_wake_agent = __BPF_FUNC_GHOST_BASE,
+	BPF_FUNC_ghost_run_gtid,
+	BPF_FUNC_ghost_resched_cpu,
+	__BPF_FUNC_GHOST_MAX_ID,
+};
+
 /* All flags used by eBPF helper functions, placed here. */
 
 /* BPF_FUNC_skb_store_bytes flags. */
@@ -6743,6 +6798,24 @@ struct bpf_sk_lookup {
 	__u32 ingress_ifindex;		/* The arriving interface. Determined by inet_iif. */
 };
 
+#define GHOST_BPF
+
+struct bpf_ghost_sched {
+	__u8 agent_on_rq;	/* there is an agent, it can run if poked */
+	__u8 agent_runnable;	/* there is an agent, it will run */
+	__u8 might_yield;	/* other classes (CFS) probably want to run.
+				 * the agent will supercede these.  latched
+				 * tasks will not.
+				 */
+	__u8 dont_idle;		/* set true to prevent the cpu from idling */
+	__u64 next_gtid;	/* scheduler will run this next, unless you do
+				 * something (or agent_runnable or
+				 * should_yield).  This is either a latched task
+				 * or was current and still TASK_RUNNING in PNT.
+				 * It will be preempted if you latch.
+				 */
+};
+
 /*
  * struct btf_ptr is used for typed pointer representation; the
  * type id is used to render the pointer data as the appropriate type
@@ -6847,5 +6920,6 @@ struct bpf_core_relo {
 	__u32 access_str_off;
 	enum bpf_core_relo_kind kind;
 };
+#define GHOST_BPF
 
 #endif /* _UAPI__LINUX_BPF_H__ */

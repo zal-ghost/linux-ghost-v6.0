@@ -157,6 +157,24 @@ class HeaderParser(object):
             except NoHelperFound:
                 break
 
+        # Ghost helpers are separate to avoid func_id collisions
+        self.reader.seek(0)
+        offset = self.reader.read().find('* Start of Ghost BPF helper function descriptions:')
+
+        if offset != -1:
+            self.reader.seek(offset)
+            self.reader.readline()
+            self.reader.readline()
+            self.line = self.reader.readline()
+
+            while True:
+                try:
+                    helper = self.parse_helper()
+                    self.helpers.append(helper)
+                except NoHelperFound:
+                    break
+        # end of ghost hack
+
         self.reader.close()
 
 ###############################################################################
@@ -469,6 +487,7 @@ class PrinterHelpers(Printer):
             'struct bpf_tcp_sock',
             'struct bpf_tunnel_key',
             'struct bpf_xfrm_state',
+            'struct bpf_ghost_sched',
             'struct linux_binprm',
             'struct pt_regs',
             'struct sk_reuseport_md',
@@ -513,6 +532,8 @@ class PrinterHelpers(Printer):
         header = '''\
 /* This is auto-generated file. See bpf_helpers_doc.py for details. */
 
+#define GHOST_BPF
+
 /* Forward declarations of BPF structs */'''
 
         print(header)
@@ -540,6 +561,15 @@ class PrinterHelpers(Printer):
 
         if proto['name'] in self.seen_helpers:
             return
+
+        # Ghost hack: the len of seen_helpers determines the func_id we print.
+        # Extend it to __BPF_FUNC_GHOST_BASE - 1
+        to_len = 3000 - 1
+        if "bpf_ghost" in proto['name'] and len(self.seen_helpers) < to_len:
+            for i in range(0, to_len - len(self.seen_helpers)):
+                self.seen_helpers.add("fake_" + str(i))
+        # end of ghost hack
+
         self.seen_helpers.add(proto['name'])
 
         print('/*')
