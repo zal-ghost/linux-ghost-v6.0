@@ -186,7 +186,7 @@ static void ghost_bpf_pnt(struct ghost_enclave *e, struct rq *rq,
 
 	old_target = set_target_enclave(e);
 	rq->ghost.in_pnt_bpf = true;
-	BPF_PROG_RUN(prog, ctx);
+	bpf_prog_run(prog, ctx);
 	rq->ghost.in_pnt_bpf = false;
 	restore_target_enclave(old_target);
 
@@ -226,7 +226,7 @@ static bool ghost_bpf_msg_send(struct ghost_enclave *e,
 	}
 	/* Program returns 0 if they want us to send the message. */
 	old_target = set_target_enclave(e);
-	send = BPF_PROG_RUN(prog, msg) == 0;
+	send = bpf_prog_run(prog, msg) == 0;
 	restore_target_enclave(old_target);
 	rcu_read_unlock();
 	return send;
