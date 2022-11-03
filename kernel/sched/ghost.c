@@ -19,6 +19,7 @@
 #include <linux/atomic.h>
 #include <linux/kvm_host.h>
 #include <uapi/linux/sched/types.h>
+#include <linux/sched/cputime.h>
 #include <linux/file.h>
 #ifdef CONFIG_X86_64
 #include <asm/apic.h>
