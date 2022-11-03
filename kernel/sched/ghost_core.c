@@ -248,7 +248,7 @@ static int ghost_get_tree(struct fs_context *fc)
 	VM_BUG_ON(!ghost_kfs_root);
 	ret = kernfs_get_tree(fc);
 	if (ret)
-		pr_err_once("Failed to mount ghostfs: %ld\n", ret);
+		pr_err_once("Failed to mount ghostfs: %d\n", ret);
 	return ret;
 }
 
@@ -439,7 +439,7 @@ static struct ghost_enclave *_ghost_resolve_enclave(struct rq *rq,
 
 	/*
 	 * Caller is responsible for ensuring stability of 'p->ghost.enclave'.
-	 * This usually happens as a side-effect of holding 'rq->lock' of the
+	 * This usually happens as a side-effect of holding 'rq->__lock' of the
 	 * cpu where the task is queued or running.
 	 */
 	task_enclave = p->ghost.enclave;
@@ -505,7 +505,7 @@ int ghost_setscheduler(struct task_struct *p, struct rq *rq,
 	 *   setscheduler from ghost, but we have no nice way of knowing if we
 	 *   already ran ghost_task_dead.
 	 */
-	if (p->state == TASK_DEAD)
+	if (p->__state == TASK_DEAD)
 		return -ESRCH;
 
 	/* Cannot change attributes for a ghost task after creation. */
@@ -581,7 +581,7 @@ unsigned long ghost_cfs_added_load(struct rq *rq)
 	rcu_read_lock();
 	curr = READ_ONCE(rq->curr);
 	if (task_has_ghost_policy(curr) && !is_agent(rq, curr) &&
-	    curr->state == TASK_RUNNING) {
+	    curr->__state == TASK_RUNNING) {
 		/* (b) */
 		add_load = true;
 	}
@@ -631,7 +631,7 @@ void ghost_copy_process_epilogue(struct task_struct *p)
 }
 
 /*
- * Called from the timer tick handler after dropping rq->lock.  Called
+ * Called from the timer tick handler after dropping rq->__lock.  Called
  * regardless of whether a ghost task is current or not.
  */
 void ghost_tick(struct rq *rq)
@@ -787,7 +787,7 @@ static void update_curr_ghost(struct rq *rq)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, rq->curr);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->update_curr(rq);
@@ -798,7 +798,7 @@ static void prio_changed_ghost(struct rq *rq, struct task_struct *p, int old)
 	struct ghost_enclave *e;
 
 	lockdep_assert_held(&p->pi_lock);
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	e = p->ghost.enclave;
 	if (e)
@@ -812,7 +812,7 @@ static void switched_to_ghost(struct rq *rq, struct task_struct *p)
 	struct ghost_enclave *e;
 
 	lockdep_assert_held(&p->pi_lock);
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	e = p->ghost.enclave;
 	if (e)
@@ -826,7 +826,7 @@ static void switched_from_ghost(struct rq *rq, struct task_struct *p)
 	struct ghost_enclave *e;
 
 	lockdep_assert_held(&p->pi_lock);
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	e = p->ghost.enclave;
 	if (e)
@@ -840,7 +840,7 @@ static void task_dead_ghost(struct task_struct *p)
 	struct ghost_enclave *e;
 
 	/*
-	 * This looks risky since neither 'p->pi_lock' nor 'rq->lock' is held
+	 * This looks risky since neither 'p->pi_lock' nor 'rq->__lock' is held
 	 * at this point but is safe because 'p' is no longer reachable from
 	 * userspace at this point (it lost identity much earlier in do_exit).
 	 *
@@ -859,7 +859,7 @@ static void dequeue_task_ghost(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->dequeue_task(rq, p, flags);
@@ -872,7 +872,7 @@ static void put_prev_task_ghost(struct rq *rq, struct task_struct *p)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->put_prev_task(rq, p);
@@ -885,7 +885,7 @@ static void enqueue_task_ghost(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->enqueue_task(rq, p, flags);
@@ -898,7 +898,7 @@ static void set_next_task_ghost(struct rq *rq, struct task_struct *p, bool first
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->set_next_task(rq, p, first);
@@ -908,14 +908,14 @@ static void set_next_task_ghost(struct rq *rq, struct task_struct *p, bool first
 }
 
 /*
- * Called from the timer tick handler while holding the rq->lock.  Called only
+ * Called from the timer tick handler while holding the rq->__lock.  Called only
  * if a ghost task is current.
  */
 static void task_tick_ghost(struct rq *rq, struct task_struct *p, int queued)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->task_tick(rq, p, queued);
@@ -947,7 +947,7 @@ static void check_preempt_curr_ghost(struct rq *rq, struct task_struct *p,
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->check_preempt_curr(rq, p, wake_flags);
@@ -962,7 +962,7 @@ static void yield_task_ghost(struct rq *rq)
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
 	VM_BUG_ON(rq != this_rq());
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->yield_task(rq);
@@ -1005,7 +1005,7 @@ void task_woken_ghost(struct rq *rq, struct task_struct *p)
 {
 	struct ghost_enclave *e = _ghost_resolve_enclave(rq, p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (e)
 		e->abi->task_woken(rq, p);
@@ -1056,10 +1056,10 @@ void ghost_switchto(struct rq *rq, struct task_struct *prev,
 {
 	struct ghost_enclave *e;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(prev != rq->curr);
-	VM_BUG_ON(prev->state == TASK_RUNNING);
-	VM_BUG_ON(next->state == TASK_RUNNING);
+	VM_BUG_ON(prev->__state == TASK_RUNNING);
+	VM_BUG_ON(next->__state == TASK_RUNNING);
 	VM_BUG_ON(!ghost_class(prev->sched_class));
 	VM_BUG_ON(!ghost_class(next->sched_class));
 	VM_BUG_ON(prev->ghost.enclave != next->ghost.enclave);
