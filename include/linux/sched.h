@@ -2076,10 +2076,10 @@ static __always_inline void scheduler_ipi(void)
 	 * irq_enter/irq_exit.
 	 */
 	if (is_idle_task(current))
-		rcu_irq_enter();
+		ct_irq_enter();
 	ghost_commit_greedy_txn();
 	if (is_idle_task(current))
-		rcu_irq_exit();
+		ct_irq_exit();
 #endif
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
