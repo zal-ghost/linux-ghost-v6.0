@@ -148,7 +148,7 @@ static void ghost_bpf_pnt(struct ghost_enclave *e, struct rq *rq,
 	struct bpf_prog *prog;
 	struct ghost_enclave *old_target;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	rcu_read_lock();
 	prog = rcu_dereference(e->bpf_pnt);
@@ -182,7 +182,7 @@ static void ghost_bpf_pnt(struct ghost_enclave *e, struct rq *rq,
 	 * pick_next_task_ghost where it is safe to unlock the RQ.
 	 */
 	rq_unpin_lock(rq, rf);
-	raw_spin_unlock(&rq->lock);
+	raw_spin_unlock(&rq->__lock);
 
 	old_target = set_target_enclave(e);
 	rq->ghost.in_pnt_bpf = true;
@@ -190,7 +190,7 @@ static void ghost_bpf_pnt(struct ghost_enclave *e, struct rq *rq,
 	rq->ghost.in_pnt_bpf = false;
 	restore_target_enclave(old_target);
 
-	raw_spin_lock(&rq->lock);
+	raw_spin_lock(&rq->__lock);
 	rq_repin_lock(rq, rf);
 
 	rcu_read_unlock();
@@ -322,7 +322,7 @@ static void __do_enclave_work(struct rq *rq)
 		 * with ew.
 		 */
 
-		raw_spin_unlock(&rq->lock);
+		raw_spin_unlock(&rq->__lock);
 
 		if (run_task_reaper) {
 			/*
@@ -338,7 +338,7 @@ static void __do_enclave_work(struct rq *rq)
 		for (; nr_decrefs > 0; nr_decrefs--)
 			kref_put(&e->kref, enclave_release);
 
-		raw_spin_lock(&rq->lock);
+		raw_spin_lock(&rq->__lock);
 	}
 }
 
@@ -351,7 +351,7 @@ static void submit_enclave_work(struct ghost_enclave *e, struct rq *rq,
 	VM_BUG_ON(nr_decrefs < 0);
 	WARN_ON_ONCE(run_task_reaper && !enclave_is_reapable(e));
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	lockdep_assert_held(&e->lock);
 
 	if (run_task_reaper && !ew->run_task_reaper) {
@@ -381,7 +381,7 @@ static void submit_enclave_work(struct ghost_enclave *e, struct rq *rq,
 
 static inline bool on_ghost_rq(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(rq != task_rq(p));
 	return !list_empty(&p->ghost.run_list);
 }
@@ -390,7 +390,7 @@ static inline bool ghost_can_schedule(struct rq *rq, gtid_t gtid)
 {
 	const struct sched_class *class = rq->curr->sched_class;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	if (ghost_class(class) || class == &idle_sched_class)
 		return true;
 
@@ -406,7 +406,7 @@ static inline void task_barrier_inc(struct rq *rq, struct task_struct *p)
 {
 	struct ghost_status_word *sw;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(rq != task_rq(p));
 
 	sw = p->ghost.status_word;
@@ -422,7 +422,7 @@ static inline void agent_barrier_inc(struct rq *rq)
 	struct ghost_status_word *sw = rq->ghost.agent->ghost.status_word;
 	uint32_t b;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	/* We may clobber a lockless increment. See pick_agent() for details. */
 	b = READ_ONCE(rq->ghost.agent_barrier) + 1;
@@ -434,7 +434,7 @@ static inline uint32_t task_barrier_get(struct task_struct *p)
 {
 	struct rq *rq = task_rq(p);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(is_agent(rq, p));
 	VM_BUG_ON(!p->ghost.status_word);
 
@@ -446,7 +446,7 @@ static inline uint32_t agent_barrier_get(struct task_struct *agent)
 	struct ghost_status_word *sw = agent->ghost.status_word;
 	struct rq *rq = task_rq(agent);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(!is_agent(rq, agent));
 	VM_BUG_ON(!agent->ghost.status_word);
 
@@ -463,7 +463,7 @@ static inline uint32_t barrier_get(struct task_struct *p)
 
 static inline void invalidate_cached_tasks(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (unlikely(rq->ghost.latched_task == p)) {
 		if (rq->ghost.skip_latched_preemption) {
@@ -499,14 +499,14 @@ static inline void invalidate_cached_tasks(struct rq *rq, struct task_struct *p)
 
 static inline bool is_cached_task(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	return rq->ghost.latched_task == p;
 }
 
 static inline void schedule_next(struct rq *rq, gtid_t gtid, bool resched)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	VM_BUG_ON(gtid != GHOST_NULL_GTID && gtid != GHOST_AGENT_GTID);
 
@@ -913,17 +913,17 @@ static int _balance_ghost(struct rq *rq, struct task_struct *prev,
 	if (!rq->ghost.latched_task && !rq_adj_nr_running(rq) &&
 	    ghost_txn_ready(cpu_of(rq))) {
 		rq_unpin_lock(rq, rf);
-		raw_spin_unlock(&rq->lock);
+		raw_spin_unlock(&rq->__lock);
 
 		ghost_commit_pending_txn(COMMIT_AT_SCHEDULE);
 
-		raw_spin_lock(&rq->lock);
+		raw_spin_lock(&rq->__lock);
 		rq_repin_lock(rq, rf);
 	}
 
 	/*
 	 * We have something to run in 'latched_task' or a higher priority
-	 * sched_class became runnable while the rq->lock was dropped.
+	 * sched_class became runnable while the rq->__lock was dropped.
 	 */
 	return rq->ghost.latched_task || rq_adj_nr_running(rq);
 }
@@ -970,7 +970,7 @@ static int _select_task_rq_ghost(struct task_struct *p, int cpu, int wake_flags)
 
 static inline bool task_is_dead(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	VM_BUG_ON(!task_has_ghost_policy(p));
 
@@ -990,7 +990,7 @@ static void set_txn_state(int *ptr, enum ghost_txn_state val)
 static int validate_next_task(struct rq *rq, struct task_struct *next,
 			      uint32_t task_barrier, int *state)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (next->ghost.agent) {
 		set_txn_state(state, GHOST_TXN_INVALID_TARGET);
@@ -1038,7 +1038,7 @@ static int validate_next_task(struct rq *rq, struct task_struct *next,
 static int validate_next_offcpu(struct rq *rq, struct task_struct *next,
 				int *state)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (next && task_running(rq, next)) {
 		/*
@@ -1325,7 +1325,7 @@ static struct task_struct *_pick_next_task_ghost(struct rq *rq)
 		 * We mark that the switchto chain has ended at the top of PNT
 		 * (switchto_count < 0). Usually we will pick a different task
 		 * (another sched_class or rq->ghost.latched_task) but this is
-		 * not guaranteed (rq->lock can be dropped in PNT and runnable
+		 * not guaranteed (rq->__lock can be dropped in PNT and runnable
 		 * tasks can migrate to other cpus).
 		 *
 		 * We set 'must_resched' to guarantee a context switch on this
@@ -1492,7 +1492,7 @@ static void _yield_task_ghost(struct rq *rq)
 	 * Fix this by deferring the YIELD msg until the task is truly
 	 * off the cpu.
 	 *
-	 * N.B. although 'rq->lock' is held here sched_yield() drops
+	 * N.B. although 'rq->__lock' is held here sched_yield() drops
 	 * it before calling schedule() making the race with ghost_run()
 	 * possible.
 	 */
@@ -1515,10 +1515,10 @@ static void _set_cpus_allowed_ghost(struct task_struct *p,
 
 	/*
 	 * do_set_cpus_allowed() mentions a case where we could arrive here
-	 * without the rq->lock held, but message delivery requires rq->lock
+	 * without the rq->__lock held, but message delivery requires rq->__lock
 	 * held.
 	 */
-	if (!raw_spin_is_locked(&rq->lock)) {
+	if (!raw_spin_is_locked(&rq->__lock)) {
 		__task_rq_lock(p, &rf);
 		locked = true;
 	}
@@ -1572,7 +1572,7 @@ done:
 static struct rq *ghost_move_task(struct rq *rq, struct task_struct *next,
 				  int cpu, struct rq_flags *rf)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	lockdep_assert_held(&next->pi_lock);
 
 	WARN_ON_ONCE(rq->ghost.skip_latched_preemption);
@@ -1580,7 +1580,7 @@ static struct rq *ghost_move_task(struct rq *rq, struct task_struct *next,
 	/*
 	 * Cleared in invalidate_cached_tasks() via move_queued_task()
 	 * and _dequeue_task_ghost(). We cannot clear it here because
-	 * move_queued_task() will release rq->lock (the rq returned
+	 * move_queued_task() will release rq->__lock (the rq returned
 	 * by move_queued_task() is different than the one passed in).
 	 */
 	rq->ghost.skip_latched_preemption = true;
@@ -2548,12 +2548,12 @@ static void ghost_uninhibit_task_msgs(struct task_struct *p)
 		 * finished executing.
 		 *
 		 * 2. task is in the middle of its last __schedule() and we
-		 * sneaked in while rq->lock was dropped in one of the PNT
+		 * sneaked in while rq->__lock was dropped in one of the PNT
 		 * sched_class callbacks.
 		 *
 		 * 3. task is about to __schedule() for the very last time
 		 * (running concurrently in do_task_dead() or spinning on
-		 * rq->lock in __schedule()).
+		 * rq->__lock in __schedule()).
 		 *
 		 * It would be problematic if we produced TASK_NEW in the
 		 * first scenario since there is no guarantee that we'll
@@ -2721,7 +2721,7 @@ static int ghost_prep_agent(struct ghost_enclave *e, struct task_struct *p,
 {
 	int ret = 0;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	lockdep_assert_held(&p->pi_lock);
 
 	WARN_ON_ONCE(!capable(CAP_SYS_NICE));
@@ -3456,7 +3456,7 @@ err_newq:
  *
  * For e.g. the ghost queue associated with a task (p->ghost.dst_q)
  * is protected by task_rq(p)->lock. It is the caller's responsibility
- * to hold the 'rq->lock' when target_cpu(p->ghost.dst_q) is called.
+ * to hold the 'rq->__lock' when target_cpu(p->ghost.dst_q) is called.
  *
  * Returns the CPU of the ghost agent to wakeup or -1 if an eligible
  * CPU is not found or configured.
@@ -3498,8 +3498,8 @@ static int task_target_cpu(struct task_struct *p)
 {
 	struct rq *rq = task_rq(p);
 
-	/* 'p->ghost.dst_q' is protected by 'rq->lock' */
-	lockdep_assert_held(&rq->lock);
+	/* 'p->ghost.dst_q' is protected by 'rq->__lock' */
+	lockdep_assert_held(&rq->__lock);
 
 	/*
 	 * It doesn't make sense to notify an agent about its own state change.
@@ -3514,7 +3514,7 @@ static int agent_target_cpu(struct rq *rq)
 {
 	struct task_struct *agent = rq->ghost.agent;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(!is_agent(rq, agent));
 
 	return target_cpu(agent->ghost.dst_q, task_cpu(agent));
@@ -3842,7 +3842,7 @@ static inline bool cpu_skip_message(struct rq *rq)
 {
 	struct task_struct *agent = rq->ghost.agent;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (WARN_ON_ONCE(!agent))
 		return true;
@@ -3933,7 +3933,7 @@ static bool ghost_in_switchto(struct rq *rq)
  */
 static inline int __task_deliver_common(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	/*
 	 * Some operations (e.g. sched_setaffinity()) can race with task death
@@ -4221,7 +4221,7 @@ static void release_from_ghost(struct rq *rq, struct task_struct *p)
 
 	VM_BUG_ON(!e);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	lockdep_assert_held(&p->pi_lock);
 
 	WARN_ON_ONCE(is_cached_task(rq, p));
@@ -4463,7 +4463,7 @@ static void ghost_set_pnt_state(struct rq *rq, struct task_struct *p,
 {
 	trace_sched_ghost_latched(rq->ghost.latched_task, p, run_flags);
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	if (rq->ghost.latched_task && rq->ghost.latched_task != p) {
 		/*
@@ -4587,7 +4587,7 @@ static void _ghost_task_preempted(struct rq *rq, struct task_struct *p,
 {
 	bool from_switchto;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	/*
@@ -4623,7 +4623,7 @@ static void _ghost_task_preempted(struct rq *rq, struct task_struct *p,
 
 static void ghost_task_preempted(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	_ghost_task_preempted(rq, p, false);
@@ -4631,7 +4631,7 @@ static void ghost_task_preempted(struct rq *rq, struct task_struct *p)
 
 static void ghost_task_got_oncpu(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	/*
@@ -4648,7 +4648,7 @@ static void ghost_task_got_oncpu(struct rq *rq, struct task_struct *p)
 
 static void _ghost_task_new(struct rq *rq, struct task_struct *p, bool runnable)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	enclave_add_task(p->ghost.enclave, p);
@@ -4667,7 +4667,7 @@ static void ghost_task_new(struct rq *rq, struct task_struct *p)
 
 static void ghost_task_yield(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	/* See explanation in ghost_task_preempted() */
@@ -4679,7 +4679,7 @@ static void ghost_task_yield(struct rq *rq, struct task_struct *p)
 
 static void ghost_task_blocked(struct rq *rq, struct task_struct *p)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	VM_BUG_ON(task_rq(p) != rq);
 
 	task_deliver_msg_blocked(rq, p);
@@ -4722,18 +4722,18 @@ static void wait_for_rendezvous(struct rq *rq)
 				 * state. For e.g. T1 started running on CPU1
 				 * but its rendezvous was poisoned (another
 				 * cpu in its sync_group failed to commit). By
-				 * the time T1 acquired the rq->lock there was
+				 * the time T1 acquired the rq->__lock there was
 				 * newer sync_group commit that committed T1
 				 * on CPU1 (this one was successful). The new
 				 * commit would detect that T1 was already on
 				 * CPU1 and elide the IPI. Thus we check for
-				 * poisoned rendezvous under 'rq->lock' lest
+				 * poisoned rendezvous under 'rq->__lock' lest
 				 * we force T1 offcpu inadvertently!
 				 */
 				rq_lock_irqsave(rq, &rf);
 
 				/*
-				 * Validate everything after acquiring rq->lock
+				 * Validate everything after acquiring rq->__lock
 				 * since everything (including our sched_class)
 				 * could have changed underneath us.
 				 */
@@ -5160,7 +5160,7 @@ static inline bool _local_commit(struct rq *rq, bool sync)
 	int run_cpu = cpu_of(rq);
 	int this_cpu = raw_smp_processor_id();
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 	WARN_ON_ONCE(preemptible());
 
 	return sync && this_cpu == run_cpu && is_agent(rq, current);
@@ -5295,7 +5295,7 @@ static bool _ghost_commit_txn(int run_cpu, bool sync, int64_t rendezvous,
 			 * the the race with ghost_wait_for_rendezvous() where
 			 * it calls force_offcpu() due to an earlier poisoned
 			 * rendezvous but hasn't scheduled yet (either hasn't
-			 * reached a scheduling point or waiting for 'rq->lock'
+			 * reached a scheduling point or waiting for 'rq->__lock'
 			 * in __schedule).
 			 *
 			 * Fail the commit until 'next' gets fully offcpu.
@@ -5503,7 +5503,7 @@ static bool _ghost_commit_txn(int run_cpu, bool sync, int64_t rendezvous,
 	txn->cpu_seqnum = ++rq->ghost.cpu_seqnum;
 out:
 	if (rq) {
-		lockdep_assert_held(&rq->lock);
+		lockdep_assert_held(&rq->__lock);
 		if (WARN_ON_ONCE(rq != cpu_rq(run_cpu))) {
 			rq_unlock_irqrestore(rq, &rf);
 			rq = NULL;
@@ -7448,7 +7448,7 @@ static void prepare_task_switch(struct rq *rq, struct task_struct *prev,
 
 	/*
 	 * An oncpu task may switch into ghost (e.g. via a third party calling
-	 * sched_setscheduler(2)) while the rq->lock is dropped in one of the
+	 * sched_setscheduler(2)) while the rq->__lock is dropped in one of the
 	 * pick_next_task handlers (e.g. during CFS idle load balancing).
 	 *
 	 * It is not possible to distinguish this in _switched_to_ghost() so
