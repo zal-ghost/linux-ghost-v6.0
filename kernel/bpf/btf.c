@@ -27,6 +27,10 @@
 #include <net/sock.h>
 #include "../tools/lib/bpf/relo_core.h"
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+#include <uapi/linux/ghost.h>
+#endif
+
 /* BTF (BPF Type Format) is the meta data format which describes
  * the data types of BPF program/map.  Hence, it basically focus
  * on the C programming language which the modern BPF is primary

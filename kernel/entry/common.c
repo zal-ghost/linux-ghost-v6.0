@@ -11,6 +11,10 @@
 
 #include "common.h"
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+#include <uapi/linux/ghost.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/syscalls.h>
 
@@ -177,6 +181,9 @@ static unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 		 * enabled above.
 		 */
 		local_irq_disable_exit_to_user();
+#ifdef CONFIG_SCHED_CLASS_GHOST
+		ghost_commit_greedy_txn();
+#endif
 
 		/* Check if any of the above work has queued a deferred wakeup */
 		tick_nohz_user_enter_prepare();
@@ -193,6 +200,9 @@ static void exit_to_user_mode_prepare(struct pt_regs *regs)
 	unsigned long ti_work = read_thread_flags();
 
 	lockdep_assert_irqs_disabled();
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	ghost_commit_greedy_txn();
+#endif
 
 	/* Flush pending rcuog wakeup before the last need_resched() check */
 	tick_nohz_user_enter_prepare();

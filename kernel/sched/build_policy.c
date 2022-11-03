@@ -52,3 +52,6 @@
 #include "cputime.c"
 #include "deadline.c"
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+# include "ghost.c"
+#endif

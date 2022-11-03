@@ -108,3 +108,7 @@
 #ifdef CONFIG_SCHED_AUTOGROUP
 # include "autogroup.c"
 #endif
+
+#ifdef CONFIG_SCHED_CLASS_GHOST
+# include "ghost_core.c"
+#endif

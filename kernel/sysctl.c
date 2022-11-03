@@ -1841,6 +1841,13 @@ static struct ctl_table kern_table[] = {
 	},
 #endif
 	{
+		.procname	= "pid_max_max",
+		.data		= &pid_max_max,
+		.maxlen		= sizeof(int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "pid_max",
 		.data		= &pid_max,
 		.maxlen		= sizeof (int),
@@ -2451,6 +2458,16 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
+	},
+#endif
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	{
+		.procname	= "ghost_cfs_load_added",
+		.data		= &sysctl_ghost_cfs_load_added,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_minmax,
+		.extra1		= SYSCTL_ZERO,
 	},
 #endif
 	{ }

@@ -2306,6 +2306,11 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 			   struct btf *attach_btf, u32 btf_id,
 			   struct bpf_prog *dst_prog)
 {
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	BUILD_BUG_ON(__MAX_BPF_GHOST_ATTACH_TYPE > 0xFFFF);
+	expected_attach_type &= 0xFFFF;
+#endif
+
 	if (btf_id) {
 		if (btf_id > BTF_MAX_TYPE)
 			return -EINVAL;
@@ -2458,6 +2463,11 @@ static int bpf_prog_load(union bpf_attr *attr, bpfptr_t uattr)
 	int err;
 	char license[128];
 	bool is_gpl;
+
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	if (current->group_leader->ghost.bpf_cannot_load_prog)
+		return -EPERM;
+#endif
 
 	if (CHECK_ATTR(BPF_PROG_LOAD))
 		return -EINVAL;
@@ -3383,7 +3393,13 @@ static int bpf_prog_attach_check_attach_type(const struct bpf_prog *prog,
 static enum bpf_prog_type
 attach_type_to_prog_type(enum bpf_attach_type attach_type)
 {
-	switch (attach_type) {
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	BUILD_BUG_ON(__MAX_BPF_GHOST_ATTACH_TYPE > 0xFFFF);
+	attach_type &= 0xFFFF;
+#endif
+
+	/* Cast to int for ghost attach types */
+	switch ((int)attach_type) {
 	case BPF_CGROUP_INET_INGRESS:
 	case BPF_CGROUP_INET_EGRESS:
 		return BPF_PROG_TYPE_CGROUP_SKB;
@@ -3438,6 +3454,10 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 		return BPF_PROG_TYPE_XDP;
 	case BPF_LSM_CGROUP:
 		return BPF_PROG_TYPE_LSM;
+	case BPF_GHOST_SCHED_PNT:
+		return BPF_PROG_TYPE_GHOST_SCHED;
+	case BPF_GHOST_MSG_SEND:
+		return BPF_PROG_TYPE_GHOST_MSG;
 	default:
 		return BPF_PROG_TYPE_UNSPEC;
 	}
@@ -4600,6 +4620,12 @@ static int link_create(union bpf_attr *attr, bpfptr_t uattr)
 		else
 			ret = bpf_kprobe_multi_link_attach(attr, prog);
 		break;
+#ifdef CONFIG_SCHED_CLASS_GHOST
+	case BPF_PROG_TYPE_GHOST_SCHED:
+	case BPF_PROG_TYPE_GHOST_MSG:
+		ret = ghost_bpf_link_attach(attr, prog);
+		break;
+#endif
 	default:
 		ret = -EINVAL;
 	}

@@ -124,6 +124,19 @@
  * used to determine the order of the priority of each sched class in
  * relation to each other.
  */
+#ifdef CONFIG_SCHED_CLASS_GHOST
+#define SCHED_DATA				\
+	STRUCT_ALIGN();				\
+	__sched_class_highest = .;		\
+	*(__stop_sched_class)			\
+	*(__ghost_agent_sched_class)		\
+	*(__dl_sched_class)			\
+	*(__rt_sched_class)			\
+	*(__fair_sched_class)			\
+	*(__ghost_sched_class)			\
+	*(__idle_sched_class)			\
+	__sched_class_lowest = .;
+#else
 #define SCHED_DATA				\
 	STRUCT_ALIGN();				\
 	__sched_class_highest = .;		\
@@ -133,6 +146,7 @@
 	*(__fair_sched_class)			\
 	*(__idle_sched_class)			\
 	__sched_class_lowest = .;
+#endif
 
 /* The actual configuration determine if the init/exit sections
  * are handled as text/data or they can be discarded (which
@@ -421,6 +435,16 @@
 	__end_ro_after_init = .;
 #endif
 
+#ifdef CONFIG_SCHED_CLASS_GHOST
+#define	GHOST_ABI_RODATA		\
+	STRUCT_ALIGN();			\
+	__begin_ghost_abi = .;		\
+	*(.rodata.ghost_abi)		\
+	__end_ghost_abi = .;
+#else
+#define	GHOST_ABI_RODATA
+#endif
+
 /*
  * Read only Data
  */
@@ -428,6 +452,7 @@
 	. = ALIGN((align));						\
 	.rodata           : AT(ADDR(.rodata) - LOAD_OFFSET) {		\
 		__start_rodata = .;					\
+		GHOST_ABI_RODATA					\
 		*(.rodata) *(.rodata.*)					\
 		SCHED_DATA						\
 		RO_AFTER_INIT_DATA	/* Read only after init */	\
