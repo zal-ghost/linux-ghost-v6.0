@@ -4280,7 +4280,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * Everything before this was a light wakeup (wakee was 'current'
 	 * or 'on_rq') and thus don't actually produce TASK_WAKEUP msgs.
 	 */
-	deferrable_wakeup = !!(p->state & __TASK_DEFERRABLE_WAKEUP);
+	deferrable_wakeup = !!(p->__state & __TASK_DEFERRABLE_WAKEUP);
 
 	/*
 	 * We're doing the wakeup (@success == 1), they did a dequeue (p->on_rq
@@ -6796,7 +6796,7 @@ void ghost_agent_schedule(void)
 
 	/* Verify that agent is voluntarily giving up CPU. */
 	VM_BUG_ON(this_rq()->ghost.agent != current);
-	VM_BUG_ON(current->state != TASK_RUNNING);
+	VM_BUG_ON(current->__state != TASK_RUNNING);
 
 	VM_BUG_ON(preempt_count() != PREEMPT_DISABLE_OFFSET);
 
