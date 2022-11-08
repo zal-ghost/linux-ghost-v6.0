@@ -50,6 +50,7 @@
 
 #include <asm/switch_to.h>
 
+#define _GHOST_MAYBE_CONST // FIXME: this is just a workaround
 #include "sched.h"
 #include "sched-pelt.h"
 #include "stats.h"

@@ -1,4 +1,5 @@
 #include <linux/kernfs.h>
+#include "../../fs/kernfs/kernfs-internal.h"
 
 #define _GHOST_MAYBE_CONST
 #include "sched.h"
@@ -238,7 +239,6 @@ static int __init ghost_setup_root(void)
 	return ret;
 }
 
-#include "../../fs/kernfs/kernfs-internal.h"
 
 static int ghost_get_tree(struct fs_context *fc)
 {
