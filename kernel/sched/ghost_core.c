@@ -721,7 +721,7 @@ void ghost_commit_greedy_txn(void)
 
 	put_cpu();
 }
-
+EXPORT_SYMBOL(ghost_commit_greedy_txn);
 /* Called from timerfd_triggered() on timer expiry */
 void ghost_timerfd_triggered(struct __kernel_timerfd_ghost *ktfd)
 {

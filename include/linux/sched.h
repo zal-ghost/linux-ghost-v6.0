@@ -735,7 +735,6 @@ struct __kernel_timerfd_ghost {
 
 extern void ghost_commit_greedy_txn(void);
 extern void ghost_timerfd_triggered(struct __kernel_timerfd_ghost *timer);
-
 #endif
 
 #ifdef CONFIG_UCLAMP_TASK
