@@ -27,7 +27,7 @@
 #include <trace/events/sched.h>
 
 #include "sched.h"
-#include "kernfs-internal.h"
+#include "../../fs/kernfs/kernfs-internal.h"
 
 #define __INCLUDE_KERNEL_SCHED_GHOST
 #include "ghost_uapi.h"
@@ -6694,8 +6694,8 @@ static int create_sw_region(struct kernfs_open_file *ctl_of, unsigned int id,
 		goto err_snprintf;
 	}
 
-	swr_kn = kernfs_create_file_ns(dir, name, 0440, e->uid, e->gid, 0,
-				       &gf_ops_e_swr, e, NULL);
+	swr_kn = __kernfs_create_file(dir, name, 0440, e->uid, e->gid, 0,
+				       &gf_ops_e_swr, e, NULL, NULL);
 	if (IS_ERR(swr_kn)) {
 		err = PTR_ERR(swr_kn);
 		goto err_create_kn;
@@ -7246,9 +7246,9 @@ static int gf_add_files(struct kernfs_node *parent, struct gf_dirent *dirtab,
 			kn = kernfs_create_dir_ns(parent, gft->name, gft->mode,
 						  e->uid, e->gid, NULL, NULL);
 		} else {
-			kn = kernfs_create_file_ns(parent, gft->name, gft->mode,
+			kn = __kernfs_create_file(parent, gft->name, gft->mode,
 						   e->uid, e->gid, gft->size,
-						   gft->ops, e, NULL);
+						   gft->ops, e, NULL, NULL);
 		}
 		if (IS_ERR(kn))
 			return PTR_ERR(kn);

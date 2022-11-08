@@ -187,8 +187,10 @@ static int gf_add_files(struct kernfs_node *parent, struct gf_dirent *dirtab,
 			kn = kernfs_create_dir(parent, gft->name, gft->mode,
 					       NULL);
 		} else {
-			kn = kernfs_create_file(parent, gft->name, gft->mode,
-						gft->size, gft->ops, priv);
+			kn = __kernfs_create_file(parent, gft->name, gft->mode,
+			GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+						gft->size, gft->ops, priv,
+						NULL, NULL);
 		}
 		if (IS_ERR(kn))
 			return PTR_ERR(kn);
