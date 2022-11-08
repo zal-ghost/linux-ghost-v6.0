@@ -237,7 +237,7 @@ static inline void sched_ghost_entity_init(struct task_struct *p)
 static inline unsigned long ghost_cfs_added_load(struct rq *rq) { return 0; }
 #endif	/* CONFIG_SCHED_CLASS_GHOST */
 
-struct callback_head *splice_balance_callbacks(struct rq *rq);
+// struct callback_head *splice_balance_callbacks(struct rq *rq);
 void balance_callbacks(struct rq *rq, struct callback_head *head);
 
 /*
